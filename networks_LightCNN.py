@@ -13,17 +13,17 @@ class DeepFace(torch.nn.Module):
         super(DeepFace, self).__init__()
 
         self.feature_extract = torch.nn.ModuleList([
-            _Conv2dMFM2_1(num_channels, 96, 5, 1, 2),
+            _Conv2dMFM2_1(num_channels, 48, 5, 1, 2),
             torch.nn.Sequential(
                 torch.nn.MaxPool2d(2, 2),
-                _DFBlock(96, 96, 192, 1),),
+                _DFBlock(48, 48, 96, 1),),
             torch.nn.Sequential(
                 torch.nn.MaxPool2d(2, 2),
-                _DFBlock(192, 192, 384, 2),),
+                _DFBlock(96, 96, 192, 2),),
             torch.nn.Sequential(
                 torch.nn.MaxPool2d(2, 2),
-                _DFBlock(384, 256, 256, 3),
-                _DFBlock(256, 256, 256, 4)),
+                _DFBlock(192, 128, 128, 3),
+                _DFBlock(128, 128, 128, 4)),
             torch.nn.MaxPool2d(2, 2),
             torch.nn.Sequential(
                 torch.nn.Linear(128 * (resolution >> 4) ** 2, 512),
@@ -77,8 +77,8 @@ class _DFBlock(torch.nn.Module):
 
         self.sub_module = torch.nn.Sequential(
             *[ResidualBlock(in_channels, 3, 1, 1) for _ in range(res_num)],
-            _Conv2dMFM2_1(in_channels//2, mix_channels, 1, 1, 0),
-            _Conv2dMFM2_1(mix_channels//2, out_channels, 3, 1, 1),
+            _Conv2dMFM2_1(in_channels, mix_channels, 1, 1, 0),
+            _Conv2dMFM2_1(mix_channels, out_channels, 3, 1, 1),
         )
 
     def forward(self, input):
@@ -91,8 +91,8 @@ class ResidualBlock(torch.nn.Module):
         super(ResidualBlock, self).__init__()
 
         self.sub_module = torch.nn.Sequential(
-            _Conv2dMFM2_1(channels//2, channels, kernel_size, stride, padding),
-            _Conv2dMFM2_1(channels//2, channels, kernel_size, stride, padding),
+            _Conv2dMFM2_1(channels, channels, kernel_size, stride, padding),
+            _Conv2dMFM2_1(channels, channels, kernel_size, stride, padding),
         )
 
     def forward(self, input):
@@ -105,7 +105,7 @@ class _Conv2dMFM2_1(torch.nn.Module):
         super(_Conv2dMFM2_1, self).__init__()
 
         self.sub_module = torch.nn.Sequential(
-            torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=bias),
+            torch.nn.Conv2d(in_channels, 2 * out_channels, kernel_size, stride, padding, bias=bias),
             MFM2_1(),
         )
 
