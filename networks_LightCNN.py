@@ -14,15 +14,15 @@ class DeepFace(torch.nn.Module):
 
         self.feature_extract = torch.nn.ModuleList([
             _Conv2dMFM2_1(num_channels, 48, 5, 1, 2),
-            torch.nn.Sequential(torch.nn.MaxPool2d(2, 2),
+            torch.nn.Sequential(torch.nn.MaxPool2d(2, 2, ceil_mode=True),
                                 _DFBlock(48, 48, 96, 1),),
-            torch.nn.Sequential(torch.nn.MaxPool2d(2, 2),
+            torch.nn.Sequential(torch.nn.MaxPool2d(2, 2, ceil_mode=True),
                                 _DFBlock(96, 96, 192, 2),),
-            torch.nn.Sequential(torch.nn.MaxPool2d(2, 2),
+            torch.nn.Sequential(torch.nn.MaxPool2d(2, 2, ceil_mode=True),
                                 _DFBlock(192, 128, 128, 3),
                                 _DFBlock(128, 128, 128, 4),),
-            torch.nn.MaxPool2d(2, 2),
-            torch.nn.Sequential(torch.nn.Linear(128 * (resolution >> 4) ** 2, 512),
+            torch.nn.MaxPool2d(2, 2, ceil_mode=True),
+            torch.nn.Sequential(torch.nn.Linear(128 * (resolution >> 4) ** 2, 2 * 256),
                                 MFM2_1(),),
         ])
 
@@ -125,3 +125,154 @@ class MFM3_2(torch.nn.Module):
         output = torch.cat([input.max(dim=1)[0], input.median(dim=1)[0]], dim=1)
 
         return output
+
+
+class LightCNN_4(torch.nn.Module):
+    """Constructed by 4 convolution layers with Max-Feature-Map operations
+       and 4 max-pooling layers, like Alexnet.
+
+       Input size: 128x128
+    """
+    def __init__(self, num_channels=1):
+        super(LightCNN_4, self).__init__()
+
+        self.feature_extract = torch.nn.Sequential(
+            _Conv2dMFM2_1(num_channels, 48, 9, 1, 0),
+            torch.nn.MaxPool2d(2, 2, ceil_mode=True),
+            _Conv2dMFM2_1(48, 96, 5, 1, 0),
+            torch.nn.MaxPool2d(2, 2, ceil_mode=True),
+            _Conv2dMFM2_1(96, 128, 5, 1, 0),
+            torch.nn.MaxPool2d(2, 2, ceil_mode=True),
+            _Conv2dMFM2_1(128, 192, 4, 1, 0),
+            torch.nn.MaxPool2d(2, 2, ceil_mode=True),
+        )
+        self.mfm_fc = torch.nn.Sequential(
+            torch.nn.Linear(192 * 5 * 5, 2 * 256),
+            MFM2_1(),
+        )
+
+    def forward(self, input):
+        output = self.feature_extract(input)
+        output = self.mfm_fc(output.reshape(output.size(0), -1))
+
+        return output
+
+
+class LightCNN_9(torch.nn.Module):
+    """Integrates NIN and a small convolution kernel size in to the network with MFM. """
+    def __init__(self, num_channels=1, resolution=128):
+        super(LightCNN_9, self).__init__()
+
+        self.feature_extract = torch.nn.Sequential(
+            _Conv2dMFM2_1(num_channels, 48, 5, 1, 2),
+            torch.nn.MaxPool2d(2, 2, ceil_mode=True),
+            _Group(48, 96, 3, 1, 1),
+            torch.nn.MaxPool2d(2, 2, ceil_mode=True),
+            _Group(96, 192, 3, 1, 1),
+            torch.nn.MaxPool2d(2, 2, ceil_mode=True),
+            _Group(192, 128, 3, 1, 1),
+            _Group(128, 128, 3, 1, 1),
+            torch.nn.MaxPool2d(2, 2, ceil_mode=True),
+        )
+        self.mfm_fc = torch.nn.Sequential(
+            torch.nn.Linear(128 * (resolution >> 4) ** 2, 2 * 256),
+            MFM2_1(),
+        )
+
+    def forward(self, input):
+        output = self.feature_extract(input)
+        output = self.mfm_fc(output.reshape(output.size(0), -1))
+
+        return output
+
+
+class LightCNN_29(torch.nn.Module):
+    """Introduces the idea of residual block to LightCNN. """
+    def __init__(self, num_channels=1, resolution=128):
+        super(LightCNN_29, self).__init__()
+
+        self.feature_extract = torch.nn.Sequential(
+            _Conv2dMFM2_1(num_channels, 48, 5, 1, 2),
+            torch.nn.MaxPool2d(2, 2, ceil_mode=True),
+            *[ResidualBlock(48) for _ in range(1)],
+            _Group(48, 96, 3, 1, 1),
+            torch.nn.MaxPool2d(2, 2, ceil_mode=True),
+            *[ResidualBlock(96) for _ in range(2)],
+            _Group(96, 192, 3, 1, 1),
+            torch.nn.MaxPool2d(2, 2, ceil_mode=True),
+            *[ResidualBlock(192) for _ in range(3)],
+            _Group(192, 128, 3, 1, 1),
+            *[ResidualBlock(128) for _ in range(4)],
+            _Group(128, 128, 3, 1, 1),
+            torch.nn.MaxPool2d(2, 2, ceil_mode=True),
+        )
+        self.mfm_fc = torch.nn.Sequential(
+            torch.nn.Linear(128 * (resolution >> 4) ** 2, 2 * 256),
+            MFM2_1(),
+        )
+
+    def forward(self, input):
+        output = self.feature_extract(input)
+        output = self.mfm_fc(output.reshape(output.size(0), -1))
+
+        return output
+
+
+class LightCNN_29v2(torch.nn.Module):
+    """Replaces the MaxPool2d with MaxPool2d + AvgPool2d to preserve more
+       semantic and spatial information.
+    """
+    def __init__(self, num_channels=1, resolution=128):
+        super(LightCNN_29v2, self).__init__()
+
+        self.feature_extract = torch.nn.Sequential(
+            _Conv2dMFM2_1(num_channels, 48, 5, 1, 2),
+            _MixPool2d(2, 2, ceil_mode=True),
+            *[ResidualBlock(48) for _ in range(1)],
+            _Group(48, 96, 3, 1, 1),
+            _MixPool2d(2, 2, ceil_mode=True),
+            *[ResidualBlock(96) for _ in range(2)],
+            _Group(96, 192, 3, 1, 1),
+            _MixPool2d(2, 2, ceil_mode=True),
+            *[ResidualBlock(192) for _ in range(3)],
+            _Group(192, 128, 3, 1, 1),
+            *[ResidualBlock(128) for _ in range(4)],
+            _Group(128, 128, 3, 1, 1),
+            _MixPool2d(2, 2, ceil_mode=True),
+        )
+        self.mfm_fc = torch.nn.Sequential(
+            torch.nn.Linear(128 * (resolution >> 4) ** 2, 2 * 256),
+            MFM2_1(),
+        )
+
+    def forward(self, input):
+        output = self.feature_extract(input)
+        output = self.mfm_fc(output.reshape(output.size(0), -1))
+
+        return output
+
+
+class _Group(torch.nn.Module):
+
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
+        super(_Group, self).__init__()
+
+        self.sub_module = torch.nn.Sequential(
+            _Conv2dMFM2_1(in_channels, in_channels, 1, 1, 0),
+            _Conv2dMFM2_1(in_channels, out_channels, kernel_size, stride, padding),
+        )
+
+    def forward(self, input):
+        return self.sub_module(input)
+
+
+class _MixPool2d(torch.nn.Module):
+
+    def __init__(self, kernel_size, stride, padding=0, ceil_mode=False):
+        super(_MixPool2d, self).__init__()
+
+        self.max_pool = torch.nn.MaxPool2d(kernel_size, stride, padding, ceil_mode=ceil_mode)
+        self.avg_pool = torch.nn.AvgPool2d(kernel_size, stride, padding, ceil_mode=ceil_mode)
+
+    def forward(self, input):
+        return self.max_pool(input) + self.avg_pool(input)
