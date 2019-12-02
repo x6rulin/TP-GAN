@@ -14,20 +14,16 @@ class DeepFace(torch.nn.Module):
 
         self.feature_extract = torch.nn.ModuleList([
             _Conv2dMFM2_1(num_channels, 48, 5, 1, 2),
-            torch.nn.Sequential(
-                torch.nn.MaxPool2d(2, 2),
-                _DFBlock(48, 48, 96, 1),),
-            torch.nn.Sequential(
-                torch.nn.MaxPool2d(2, 2),
-                _DFBlock(96, 96, 192, 2),),
-            torch.nn.Sequential(
-                torch.nn.MaxPool2d(2, 2),
-                _DFBlock(192, 128, 128, 3),
-                _DFBlock(128, 128, 128, 4)),
+            torch.nn.Sequential(torch.nn.MaxPool2d(2, 2),
+                                _DFBlock(48, 48, 96, 1),),
+            torch.nn.Sequential(torch.nn.MaxPool2d(2, 2),
+                                _DFBlock(96, 96, 192, 2),),
+            torch.nn.Sequential(torch.nn.MaxPool2d(2, 2),
+                                _DFBlock(192, 128, 128, 3),
+                                _DFBlock(128, 128, 128, 4),),
             torch.nn.MaxPool2d(2, 2),
-            torch.nn.Sequential(
-                torch.nn.Linear(128 * (resolution >> 4) ** 2, 512),
-                MFM2_1(),),
+            torch.nn.Sequential(torch.nn.Linear(128 * (resolution >> 4) ** 2, 512),
+                                MFM2_1(),),
         ])
 
         if pre_trained:
